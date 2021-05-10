@@ -12,6 +12,7 @@ problemas de concorrência.
 #include <stdlib.h>
 #include <unistd.h>
 #include <time.h>
+#include <sys/time.h>
 #include <ncurses.h>
 #define MAX(a, b) ((a) > (b) ? a : b)
 #define MIN(a, b) ((a) < (b) ? a : b)
@@ -87,6 +88,7 @@ void *worker(void *args)
         Task task;
         pthread_mutex_lock(&mutexQueue);    // Lock para alterar a fila de tarefas
         if(!taskCount){
+            pthread_mutex_unlock(&mutexQueue);
             break;                          // Caso outra thread tenha finalizado as tarefas antes de conseguir o lock
         }                                   // sair do loop e finalizar a thread
         task = taskQueue[0];                // Pega a primeira tarefa da fila
@@ -141,15 +143,27 @@ WINDOW *create_newwin(int height, int width, int starty, int startx, const char 
 // Função da Thread responsável por inicializar a tela e desenhar as duas filas
 void *screenThread(void *args)
 {
-    initscr();                              // Inicializa a tela
+    WINDOW *w = initscr();                              // Inicializa a tela
+    noecho();                               // evita que o programa printe imediatamente a tecla
+    cbreak();
+    notimeout(w, TRUE);
+    nodelay(w, TRUE);
+    curs_set(0);
     clear();                                // Limpa o conteúdo do terminal
     refresh();                              // refresh inicial
+    int done = 0;
+    int max_height = -4 + 30 + MAX((THREADS- 8+3 ) /4, 0)*THREADWINDOW_HEIGHT;  // ultima linha do programa
+    struct timeval t0, t1, dt;              // sera usado o tempo decorrido, não o tempo de cpu
+                                            // pois não é contado enquanto a thread é bloqueada ou esta dormindo
 
     screenReady = 1;                        // Seta a variável permitindo que outras threads possam utilizar a tela
     WINDOW *taskWindow, *completeWindow;    // Janelas das filas
-
-    while (completeTaskCount != NUM_TASKS)  // Continuar desenhando até que todas as tarefas estejam concluidas
+    gettimeofday(&t0, NULL);
+    while (1)  // Continuar desenhando até que uma tecla seja pressionada
     {
+        if(getch() != ERR){
+            break;
+        }
         pthread_mutex_lock(&mutexScreen);   // Pega o lock para alterar o estado da tela
         wclear(taskWindow);                 // Limpa as janelas no inicio do loop
         wclear(completeWindow);
@@ -182,17 +196,29 @@ void *screenThread(void *args)
                     1,
                     "Task %d", completeTasksQueue[i].id);
             }
-        pthread_mutex_unlock(&mutexCompleteQueue);
+        pthread_mutex_unlock(&mutexCompleteQueue);        
+
+        // Caso as tarefas sejam finalizadas, parar o relógio
+        if (completeTaskCount == NUM_TASKS && done == 0) {
+            gettimeofday(&t1, NULL);
+            timersub(&t1, &t0, &dt);
+            done = 1;
+        }
+        // E exibir o tempo final
+        if(done == 1){
+            mvprintw(max_height, 1, "%d tasks took %d.%06d seconds to complete using %d threads.", NUM_TASKS, dt.tv_sec, dt.tv_usec, THREADS);
+            mvprintw(max_height + 1, 1,"Press anything to close..." );
+        }
 
         // atualiza as janelas
+        refresh();
         wrefresh(taskWindow);
         wrefresh(completeWindow);
+        
         pthread_mutex_unlock(&mutexScreen); // Devolve o lock da tela
+
         usleep(160000);                     // Sleep até renderizar a tela novamente
     }
-    // Ao sair do while (quando todas as outras threads finalizarem), aguardar uma tecla ser pressionada e fechar
-    mvprintw(-4 + 30 + MAX((THREADS- 8+3 ) /4, 0)*THREADWINDOW_HEIGHT, 1,"Press anything to close..." );
-    getch();
     endwin();
     pthread_exit(NULL);
 }
@@ -215,7 +241,8 @@ int main(int argc, char *argv[])
         {
             Task t = {
                 .id = i,
-                .timeToComplete = rand() % 5000
+                //.timeToComplete = rand() % 5000 // tempo aleatório para melhor demonstração de independencia de threads
+                .timeToComplete = 100
             };
             taskQueue[taskCount] = t;       // Inserindo na fila de tarefas
             taskCount++;                    // Incrementando o contador
