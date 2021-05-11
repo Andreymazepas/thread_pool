@@ -1,6 +1,9 @@
 /*
 Trabalho Final de Programação Concorrente
 Andrey Emmanuel Matrosov Mazépas - 16/0112362
+
+Para compilar utilizar as flags -lncurses e lpthread
+
 Pool de Threads - Uma visualização de como threads podem realizar uma lista de tarefas sem
 passarem na frente umas das outras, atualizando multiplas regiões críticas e desenhando na tela sem
 problemas de concorrência.
@@ -241,8 +244,8 @@ int main(int argc, char *argv[])
         {
             Task t = {
                 .id = i,
-                //.timeToComplete = rand() % 5000 // tempo aleatório para melhor demonstração de independencia de threads
-                .timeToComplete = 100
+                .timeToComplete = rand() % 5000 // tempo aleatório para melhor demonstração de independencia de threads
+                //.timeToComplete = 100
             };
             taskQueue[taskCount] = t;       // Inserindo na fila de tarefas
             taskCount++;                    // Incrementando o contador
